@@ -64,8 +64,9 @@ input{background:#000;border:1px solid var(--line);color:var(--tx);font:inherit;
 <script>
 /* ===== CONFIG: edit these two values ===== */
 const CONFIG = {
-  escrow: "@ompueme",      // Sphere nametag or address that receives stakes
-  coinId: "UCT",                // testnet token
+  escrow: "@your-nametag",      // Sphere nametag or address that receives stakes
+  coinId: "UCT",                // label only
+  coinIdHex: "f581d30f593e4b369d684a4563b5246f07b1d265f7178a2c0a82b81f39c24dc0",
   intentAction: "send",         // check CONNECT.md for the exact transfer intent name
   dapp: { name: "UniPredict", url: location.origin, icon: location.origin + "/icon.png" }
 };
@@ -183,7 +184,9 @@ async function placeBet(m, side){
   if(!client) return msg.textContent = "Connect your Sphere wallet first.";
   $("#go").disabled = true; msg.textContent = "Waiting for wallet approval…";
   try{
-    await client.intent(CONFIG.intentAction, { to: CONFIG.escrow, amount: String(amount), coinId: CONFIG.coinId, memo: `${m.id}:${side}` });
+    const coinId = await resolveCoinId();
+    if(!coinId){ msg.textContent = "Could not find the UCT coin id. Set coinIdHex in CONFIG."; $("#go").disabled = false; return; }
+    await client.intent(CONFIG.intentAction, { to: CONFIG.escrow, amount: toUnits($("#amt").value), coinId, memo: `${m.id}:${side}` });
     store.bets = [...store.bets, { id: m.id, side, amount, at: Date.now(), status: "ok" }];
     closeModal(); render();
   }catch(err){
@@ -196,6 +199,25 @@ async function placeBet(m, side){
     } else msg.textContent = "Transfer failed. " + (err && err.message ? err.message : "");
     $("#go").disabled = false; render();
   }
+}
+
+/* ===== UCT coin id (64-char hex) ===== */
+function toUnits(str, dec = 18){
+  const [w, f = ""] = String(str).trim().split(".");
+  return (BigInt(w || "0") * 10n ** BigInt(dec) + BigInt((f + "0".repeat(dec)).slice(0, dec))).toString();
+}
+let coinIdCache = null;
+const isHex = s => /^[0-9a-f]{64}$/.test(s || "");
+async function resolveCoinId(){
+  if(coinIdCache) return coinIdCache;
+  if(isHex(CONFIG.coinIdHex)){ coinIdCache = CONFIG.coinIdHex; return coinIdCache; }
+  try{
+    const sdk = await import("https://esm.sh/@unicitylabs/sphere-sdk?bundle");
+    if(sdk.TokenRegistry && sdk.TokenRegistry.waitForReady) await sdk.TokenRegistry.waitForReady();
+    const id = sdk.getCoinIdBySymbol("UCT");
+    if(isHex(id)) coinIdCache = id;
+  }catch(e){}
+  return coinIdCache;
 }
 
 /* ===== Sphere wallet ===== */

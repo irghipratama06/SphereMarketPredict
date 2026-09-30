@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UniPredict</title>
+<style>
+:root{--bg:#050505;--card:#121212;--line:#2b2b2b;--or:#ff7a00;--or2:#ffa040;--tx:#f4f1ee;--mu:#9a948d;--yes:#ff7a00;--no:#8a8a8a}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--tx);font:15px/1.45 "Trebuchet MS",system-ui,sans-serif;padding-bottom:40px}
+header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:2px solid var(--or);position:sticky;top:0;background:var(--bg);z-index:5}
+.logo{font:800 22px Georgia,serif;letter-spacing:.5px}.logo b{color:var(--or)}
+button{font:inherit;cursor:pointer;border:0;border-radius:8px}
+.btn{background:var(--or);color:#000;font-weight:700;padding:9px 14px}
+.btn:disabled{background:#333;color:#777;cursor:not-allowed}
+.ghost{background:transparent;color:var(--tx);border:1px solid var(--line);padding:7px 12px}
+.ghost.on{border-color:var(--or);color:var(--or)}
+.ticker{display:flex;gap:18px;overflow-x:auto;padding:10px 16px;border-bottom:1px solid var(--line);color:var(--mu);white-space:nowrap}
+.ticker b{color:var(--or2)}
+main{max-width:980px;margin:0 auto;padding:16px}
+.tabs{display:flex;gap:8px;margin-bottom:12px}
+.row{display:flex;gap:8px;overflow-x:auto;margin-bottom:10px;padding-bottom:2px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--or);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.card.closed{border-left-color:#444;opacity:.75}
+.meta{display:flex;justify-content:space-between;color:var(--mu);font-size:12.5px}
+.q{font-size:16px;font-weight:700}
+.bar{height:10px;border-radius:5px;background:var(--no);overflow:hidden}.bar i{display:block;height:100%;background:var(--yes)}
+.pcts{display:flex;justify-content:space-between;font-weight:700}
+.sides{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.yes{background:var(--or);color:#000;font-weight:700;padding:10px}
+.no{background:#262626;color:var(--tx);font-weight:700;padding:10px;border:1px solid #444}
+.sides button:disabled{opacity:.35;cursor:not-allowed}
+.tag{border:1px solid var(--or);color:var(--or);border-radius:20px;padding:1px 9px;font-size:12px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}.stat small{color:var(--mu);display:block}.stat b{font-size:18px;color:var(--or)}
+.modal{position:fixed;inset:0;background:#000c;display:none;align-items:flex-end;justify-content:center;z-index:10}
+.modal.show{display:flex}
+.sheet{background:var(--card);border-top:3px solid var(--or);border-radius:16px 16px 0 0;width:100%;max-width:480px;padding:18px;display:flex;flex-direction:column;gap:10px}
+input{background:#000;border:1px solid var(--line);color:var(--tx);font:inherit;padding:11px;border-radius:8px;width:100%}
+.msg{color:var(--or2);min-height:20px;font-size:13.5px}
+.empty{color:var(--mu);padding:30px 0;text-align:center}
+.note{color:var(--mu);font-size:12.5px;margin-top:18px}
+:focus-visible{outline:2px solid var(--or2);outline-offset:2px}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Uni<b>Predict</b></div>
+  <button class="btn" id="walletBtn">Connect Sphere</button>
+</header>
+<div class="ticker" id="ticker">Loading prices…</div>
+<main>
+  <div class="tabs">
+    <button class="ghost on" data-tab="markets">Markets</button>
+    <button class="ghost" data-tab="portfolio">Portfolio</button>
+  </div>
+  <div id="view"></div>
+  <p class="note">Testnet only. Stakes are paid in UCT testnet tokens and have no real value.</p>
+</main>
+
+<div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+
+<script>
+/* ===== CONFIG: edit these two values ===== */
+const CONFIG = {
+  escrow: "@your-nametag",      // Sphere nametag or address that receives stakes
+  coinId: "UCT",                // testnet token
+  intentAction: "send",         // check CONNECT.md for the exact transfer intent name
+  dapp: { name: "UniPredict", url: location.origin, icon: location.origin + "/icon.png" }
+};
+/* ========================================= */
+
+const $ = s => document.querySelector(s);
+const store = {
+  get bets(){ try{return JSON.parse(localStorage.getItem("up_bets")||"[]")}catch(e){return []} },
+  set bets(v){ try{localStorage.setItem("up_bets",JSON.stringify(v))}catch(e){} }
+};
+let markets = [], prices = {}, tab = "markets", cat = "all", tf = "all";
+let client = null, identity = null;
+
+const fmtMoney = n => "$" + Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
+const isClosed = m => Date.now() >= new Date(m.ends).getTime();
+function pools(m){
+  let y = m.seedYes, n = m.seedNo;
+  store.bets.filter(b => b.id === m.id && b.status !== "failed").forEach(b => b.side === "yes" ? y += b.amount : n += b.amount);
+  return { y, n, t: y + n };
+}
+function left(ms){
+  if (ms <= 0) return "Closed";
+  const d = Math.floor(ms/864e5), h = Math.floor(ms%864e5/36e5), mi = Math.floor(ms%36e5/6e4), s = Math.floor(ms%6e4/1e3);
+  return (d ? d + "d " : "") + String(h).padStart(2,"0") + ":" + String(mi).padStart(2,"0") + ":" + String(s).padStart(2,"0");
+}
+
+async function loadMarkets(){
+  try{
+    const r = await fetch("markets.json?t=" + Date.now());
+    markets = (await r.json()).markets;
+  }catch(e){ markets = []; }
+  render();
+}
+async function loadPrices(){
+  try{
+    const r = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true");
+    prices = await r.json();
+    $("#ticker").innerHTML = [["bitcoin","BTC"],["ethereum","ETH"],["solana","SOL"]].map(([k,s]) => {
+      const p = prices[k]; if(!p) return "";
+      const c = p.usd_24h_change||0;
+      return `${s} <b>${fmtMoney(p.usd)}</b> ${c>=0?"+":""}${c.toFixed(2)}%`;
+    }).join("");
+  }catch(e){ $("#ticker").textContent = "Live prices unavailable"; }
+}
+
+function card(m){
+  const p = pools(m), yp = Math.round(p.y/p.t*100), closed = isClosed(m);
+  const live = m.asset && prices[m.asset] ? ` · now ${fmtMoney(prices[m.asset].usd)}` : "";
+  const res = m.outcome ? `<span class="tag">Resolved: ${m.outcome.toUpperCase()}</span>` : "";
+  return `<div class="card ${closed?"closed":""}">
+    <div class="meta"><span class="tag">${m.category} · ${m.timeframe}</span><span data-end="${m.ends}">${left(new Date(m.ends)-Date.now())}</span></div>
+    <div class="q">${m.question}</div>
+    <div class="meta"><span>Pool ${p.t.toFixed(0)} UCT${live}</span>${res}</div>
+    <div class="bar"><i style="width:${yp}%"></i></div>
+    <div class="pcts"><span style="color:var(--or)">Yes ${yp}%</span><span style="color:var(--mu)">No ${100-yp}%</span></div>
+    <div class="sides"><button class="yes" ${closed?"disabled":""} onclick="openBet('${m.id}','yes')">Bet Yes</button><button class="no" ${closed?"disabled":""} onclick="openBet('${m.id}','no')">Bet No</button></div>
+  </div>`;
+}
+
+function renderMarkets(){
+  const cats = ["all","crypto","esports","politics"], tfs = ["all","daily","weekly","monthly"];
+  const list = markets.filter(m => (cat==="all"||m.category===cat) && (tf==="all"||m.timeframe===tf))
+    .sort((a,b) => isClosed(a)-isClosed(b) || new Date(a.ends)-new Date(b.ends));
+  const chips = (arr,cur,fn) => `<div class="row">${arr.map(x=>`<button class="ghost ${x===cur?"on":""}" onclick="${fn}('${x}')">${x[0].toUpperCase()+x.slice(1)}</button>`).join("")}</div>`;
+  return chips(cats,cat,"setCat") + chips(tfs,tf,"setTf") + (list.length ? `<div class="grid">${list.map(card).join("")}</div>` : `<div class="empty">No markets here yet.</div>`);
+}
+
+function renderPortfolio(){
+  const bets = store.bets.filter(b => b.status !== "failed");
+  if(!bets.length) return `<div class="empty">No positions yet. Place a prediction in Markets.</div>`;
+  let staked = 0, won = 0, open = 0;
+  const rows = bets.slice().reverse().map(b => {
+    const m = markets.find(x => x.id === b.id); if(!m) return "";
+    const p = pools(m); const side = b.side === "yes" ? p.y : p.n;
+    let state = "Open", est = b.amount * p.t / side;
+    if(m.outcome){ if(m.outcome === b.side){ state = "Won"; won += est; } else { state = "Lost"; est = 0; } }
+    else if(isClosed(m)) state = "Closed, awaiting result";
+    else open += b.amount;
+    staked += b.amount;
+    return `<div class="card"><div class="meta"><span class="tag">${b.side.toUpperCase()}</span><span>${state}${b.status==="unknown"?" · transfer unconfirmed":""}</span></div>
+      <div class="q">${m.question}</div><div class="meta"><span>Staked ${b.amount} UCT</span><span>Est. payout ${est.toFixed(2)} UCT</span></div></div>`;
+  }).join("");
+  return `<div class="stats"><div class="stat"><small>Total staked</small><b>${staked.toFixed(1)}</b></div><div class="stat"><small>Open</small><b>${open.toFixed(1)}</b></div><div class="stat"><small>Won (est.)</small><b>${won.toFixed(1)}</b></div></div><div class="grid">${rows}</div>`;
+}
+
+function render(){ $("#view").innerHTML = tab === "markets" ? renderMarkets() : renderPortfolio(); }
+window.setCat = c => { cat = c; render(); };
+window.setTf = t => { tf = t; render(); };
+document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => {
+  tab = b.dataset.tab;
+  document.querySelectorAll("[data-tab]").forEach(x => x.classList.toggle("on", x === b));
+  render();
+});
+
+/* ===== Betting ===== */
+window.openBet = (id, side) => {
+  const m = markets.find(x => x.id === id);
+  if(!m || isClosed(m)) return;
+  $("#sheet").innerHTML = `<div class="q">${m.question}</div>
+    <div class="meta"><span>Your pick: <b style="color:var(--or)">${side.toUpperCase()}</b></span><span>Token: ${CONFIG.coinId}</span></div>
+    <input id="amt" type="number" min="1" step="1" placeholder="Amount in UCT" inputmode="decimal">
+    <div class="msg" id="msg"></div>
+    <button class="btn" id="go">Confirm in wallet</button>
+    <button class="ghost" onclick="closeModal()">Cancel</button>`;
+  $("#modal").classList.add("show");
+  $("#go").onclick = () => placeBet(m, side);
+};
+window.closeModal = () => $("#modal").classList.remove("show");
+$("#modal").onclick = e => { if(e.target.id === "modal") closeModal(); };
+
+async function placeBet(m, side){
+  const msg = $("#msg"), amount = parseFloat($("#amt").value);
+  if(isClosed(m)) return msg.textContent = "This market is closed.";
+  if(!amount || amount <= 0) return msg.textContent = "Enter an amount above 0.";
+  if(!client) return msg.textContent = "Connect your Sphere wallet first.";
+  $("#go").disabled = true; msg.textContent = "Waiting for wallet approval…";
+  try{
+    await client.intent(CONFIG.intentAction, { recipient: CONFIG.escrow, amount: String(amount), coinId: CONFIG.coinId, memo: `${m.id}:${side}` });
+    store.bets = [...store.bets, { id: m.id, side, amount, at: Date.now(), status: "ok" }];
+    closeModal(); render();
+  }catch(err){
+    const code = err && err.code;
+    if(code === 4003) msg.textContent = "You declined the transfer. Nothing was sent.";
+    else if(code === 4009) msg.textContent = "Wallet is locked. Unlock it and try again.";
+    else if(code === 4201){
+      store.bets = [...store.bets, { id: m.id, side, amount, at: Date.now(), status: "unknown" }];
+      msg.textContent = "Transfer status unknown. Check your wallet history before trying again.";
+    } else msg.textContent = "Transfer failed. " + (err && err.message ? err.message : "");
+    $("#go").disabled = false; render();
+  }
+}
+
+/* ===== Sphere wallet ===== */
+async function connect(){
+  const btn = $("#walletBtn"); btn.disabled = true; btn.textContent = "Connecting…";
+  try{
+    const { autoConnect } = await import("https://esm.sh/@unicitylabs/sphere-sdk/connect/browser?bundle");
+    const { SPHERE_NETWORKS } = await import("https://esm.sh/@unicitylabs/sphere-sdk/connect?bundle");
+    const res = await autoConnect({
+      dapp: CONFIG.dapp,
+      network: SPHERE_NETWORKS.testnet2,
+      permissions: ["identity:read","balance:read","transfer:request"],
+      walletUrl: "https://sphere.unicity.network",
+      silent: false
+    });
+    client = res.client; identity = res.connection.identity;
+    const name = identity.nametag || identity.directAddress || "Connected";
+    btn.textContent = String(name).slice(0,14); btn.disabled = false;
+    client.on("wallet:disconnected", () => { client = null; identity = null; btn.textContent = "Connect Sphere"; });
+  }catch(e){
+    btn.textContent = "Connect Sphere"; btn.disabled = false;
+    alert("Could not connect to Sphere. Open the site in a browser that allows pop-ups and try again.");
+  }
+}
+$("#walletBtn").onclick = () => { if(!client) connect(); };
+
+/* ===== Timers ===== */
+setInterval(() => {
+  let expired = false;
+  document.querySelectorAll("[data-end]").forEach(el => {
+    const ms = new Date(el.dataset.end) - Date.now();
+    el.textContent = left(ms);
+    if(ms <= 0 && !el.closest(".closed")) expired = true;
+  });
+  if(expired){ closeModal(); render(); }
+}, 1000);
+
+loadMarkets(); loadPrices(); setInterval(loadPrices, 60000);
+</script>
+</body>
+</html>

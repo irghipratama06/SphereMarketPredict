@@ -1,0 +1,14 @@
+{
+  "_help": "Only the repo owner can edit this file on GitHub. Add a market = add an object. category: crypto | esports | politics. timeframe: daily | weekly | monthly. ends = ISO date in UTC. After ends the pool closes automatically. To settle a market add \"outcome\": \"yes\" or \"no\".",
+  "markets": [
+    { "id": "btc-d-1", "category": "crypto", "asset": "bitcoin", "timeframe": "daily", "question": "Will BTC close above $100,000 today (UTC)?", "ends": "2026-10-01T23:59:00Z", "seedYes": 120, "seedNo": 90 },
+    { "id": "eth-w-1", "category": "crypto", "asset": "ethereum", "timeframe": "weekly", "question": "Will ETH trade above $4,000 by Sunday?", "ends": "2026-10-04T23:59:00Z", "seedYes": 80, "seedNo": 110 },
+    { "id": "sol-w-1", "category": "crypto", "asset": "solana", "timeframe": "weekly", "question": "Will SOL reach $250 this week?", "ends": "2026-10-04T23:59:00Z", "seedYes": 60, "seedNo": 140 },
+    { "id": "btc-m-1", "category": "crypto", "asset": "bitcoin", "timeframe": "monthly", "question": "Will BTC hit a new all-time high in October?", "ends": "2026-10-31T23:59:00Z", "seedYes": 200, "seedNo": 160 },
+    { "id": "es-d-1", "category": "esports", "timeframe": "daily", "question": "Will the favorite win the main stage match tonight?", "ends": "2026-10-02T18:00:00Z", "seedYes": 75, "seedNo": 50 },
+    { "id": "es-m-1", "category": "esports", "timeframe": "monthly", "question": "Will an Asian team win the next world championship?", "ends": "2026-10-31T12:00:00Z", "seedYes": 140, "seedNo": 100 },
+    { "id": "po-w-1", "category": "politics", "timeframe": "weekly", "question": "Will the central bank announce a rate cut this week?", "ends": "2026-10-05T12:00:00Z", "seedYes": 50, "seedNo": 70 },
+    { "id": "po-m-1", "category": "politics", "timeframe": "monthly", "question": "Will a major trade deal be signed before month end?", "ends": "2026-10-30T23:59:00Z", "seedYes": 90, "seedNo": 130 },
+    { "id": "old-1", "category": "crypto", "asset": "bitcoin", "timeframe": "daily", "question": "Example of a closed market: BTC above $90,000 on Sep 30?", "ends": "2026-09-30T23:59:00Z", "seedYes": 100, "seedNo": 100, "outcome": "yes" }
+  ]
+}

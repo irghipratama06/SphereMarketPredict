@@ -64,7 +64,7 @@ input{background:#000;border:1px solid var(--line);color:var(--tx);font:inherit;
 <script>
 /* ===== CONFIG: edit these two values ===== */
 const CONFIG = {
-  escrow: "@ompueme",      // Sphere nametag or address that receives stakes
+  escrow: "@your-nametag",      // Sphere nametag or address that receives stakes
   coinId: "UCT",                // testnet token
   intentAction: "send",         // check CONNECT.md for the exact transfer intent name
   dapp: { name: "UniPredict", url: location.origin, icon: location.origin + "/icon.png" }
@@ -183,7 +183,7 @@ async function placeBet(m, side){
   if(!client) return msg.textContent = "Connect your Sphere wallet first.";
   $("#go").disabled = true; msg.textContent = "Waiting for wallet approval…";
   try{
-    await client.intent(CONFIG.intentAction, { recipient: CONFIG.escrow, amount: String(amount), coinId: CONFIG.coinId, memo: `${m.id}:${side}` });
+    await client.intent(CONFIG.intentAction, { to: CONFIG.escrow, amount: String(amount), coinId: CONFIG.coinId, memo: `${m.id}:${side}` });
     store.bets = [...store.bets, { id: m.id, side, amount, at: Date.now(), status: "ok" }];
     closeModal(); render();
   }catch(err){
